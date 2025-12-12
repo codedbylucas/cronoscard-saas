@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Template, EventType, EVENT_COLORS } from '../types';
+import { Template, EventType, EVENT_COLORS, TitleColor, TITLE_COLORS, getDefaultColorByType, resolveEventColorStyle } from '../types';
 import { getTemplates, saveTemplate, deleteTemplate } from '../services/storageService';
 import { generateTemplateMessage } from '../services/geminiService';
 import { Trash2, Plus, Sparkles, Save, Bell, AlertCircle, ArrowLeft, CreditCard, PenLine, Loader2, AlertTriangle } from 'lucide-react';
@@ -29,6 +29,15 @@ export const TemplateManager: React.FC<Props> = ({ user, onClose }) => {
   useEffect(() => {
     loadTemplates();
   }, [user]);
+
+  useEffect(() => {
+    if (currentTemplate.type && !currentTemplate.titleColor) {
+      setCurrentTemplate(prev => ({
+        ...prev,
+        titleColor: prev.titleColor || getDefaultColorByType(prev.type!),
+      }));
+    }
+  }, [currentTemplate.type]);
 
   const handleSave = async () => {
     if (!currentTemplate.title || !currentTemplate.content || !currentTemplate.type) return;
@@ -150,38 +159,31 @@ export const TemplateManager: React.FC<Props> = ({ user, onClose }) => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       {Object.values(EventType).map(type => {
                         const isSelected = currentTemplate.type === type;
-                        
-                        // Default Style
-                        let containerClass = "flex flex-col items-center justify-center p-5 rounded-2xl border transition-all duration-300 relative overflow-hidden group";
-                        let iconClass = "mb-3 text-gray-400 transition-colors";
-                        let textClass = "font-medium text-gray-500 text-sm transition-colors";
 
-                        if (isSelected) {
-                            if (type === EventType.DUE) {
-                                containerClass = "flex flex-col items-center justify-center p-5 rounded-2xl border border-red-200 bg-red-50/50 cursor-pointer shadow-md shadow-red-100 ring-2 ring-red-500 ring-offset-2";
-                                iconClass = "mb-3 text-red-500";
-                                textClass = "font-bold text-red-700";
-                            }
-                            if (type === EventType.CLOSING) {
-                                containerClass = "flex flex-col items-center justify-center p-5 rounded-2xl border border-amber-200 bg-amber-50/50 cursor-pointer shadow-md shadow-amber-100 ring-2 ring-amber-500 ring-offset-2";
-                                iconClass = "mb-3 text-amber-500";
-                                textClass = "font-bold text-amber-700";
-                            }
-                            if (type === EventType.PUSH) {
-                                containerClass = "flex flex-col items-center justify-center p-5 rounded-2xl border border-sky-200 bg-sky-50/50 cursor-pointer shadow-md shadow-sky-100 ring-2 ring-sky-500 ring-offset-2";
-                                iconClass = "mb-3 text-sky-500";
-                                textClass = "font-bold text-sky-700";
-                            }
-                        } else {
-                            containerClass += " bg-white border-gray-100 hover:border-blue-200 hover:shadow-lg hover:shadow-gray-100 cursor-pointer";
-                            iconClass += " group-hover:text-blue-500";
-                            textClass += " group-hover:text-gray-700";
-                        }
+                        const containerClass = [
+                          "flex flex-col items-center justify-center p-5 rounded-2xl border transition-all duration-300 relative overflow-hidden group cursor-pointer",
+                          isSelected
+                            ? "bg-white border-gray-200 shadow-md ring-2 ring-blue-500 ring-offset-2"
+                            : "bg-white border-gray-100 hover:border-blue-200 hover:shadow-lg hover:shadow-gray-100"
+                        ].join(" ");
+
+                        const iconClass = isSelected
+                          ? "mb-3 text-blue-600"
+                          : "mb-3 text-gray-400 group-hover:text-blue-500";
+
+                        const textClass = isSelected
+                          ? "font-bold text-blue-700 text-sm"
+                          : "font-medium text-gray-500 text-sm group-hover:text-gray-700";
 
                         return (
                             <div
                                 key={type}
-                                onClick={() => setCurrentTemplate({ ...currentTemplate, type })}
+                                onClick={() => {
+                                  setCurrentTemplate(prev => ({
+                                    ...prev,
+                                    type,
+                                  }));
+                                }}
                                 className={containerClass}
                             >
                                 <div className={iconClass}>{getIconForType(type, 24)}</div>
@@ -203,6 +205,42 @@ export const TemplateManager: React.FC<Props> = ({ user, onClose }) => {
                       placeholder="Ex: Fatura Nubank, Aviso de corte..."
                       maxLength={30}
                     />
+                  </div>
+
+                  {/* Title Color Selector */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 ml-1">Cor do Título</label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {TITLE_COLORS.map((color) => {
+                        const isSelected = currentTemplate.titleColor === color;
+                        const colorClasses: Record<TitleColor, string> = {
+                          yellow: 'bg-amber-100 text-amber-700 border-amber-200',
+                          green: 'bg-green-100 text-green-700 border-green-200',
+                          red: 'bg-red-100 text-red-700 border-red-200',
+                          blue: 'bg-sky-100 text-sky-700 border-sky-200',
+                        };
+                        const dotClasses: Record<TitleColor, string> = {
+                          yellow: 'bg-amber-500',
+                          green: 'bg-green-500',
+                          red: 'bg-red-500',
+                          blue: 'bg-sky-500',
+                        };
+                        return (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => { 
+                              setCurrentTemplate({ ...currentTemplate, titleColor: color }); 
+                            }}
+                            className={`flex items-center justify-between w-full px-4 py-3 rounded-xl border text-sm font-semibold transition-all ${isSelected ? `${colorClasses[color]} shadow-md` : 'bg-white text-gray-600 border-gray-200 hover:border-blue-200 hover:shadow-sm'}`}
+                          >
+                            <span className="capitalize">{color}</span>
+                            <span className={`w-4 h-4 rounded-full ${dotClasses[color]} shadow-inner`}></span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-2 ml-1">Default acompanha a categoria, mas você pode alterar.</p>
                   </div>
 
                   {/* Content Input */}
@@ -255,7 +293,7 @@ export const TemplateManager: React.FC<Props> = ({ user, onClose }) => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 max-w-[1600px] mx-auto p-4 md:p-8">
               {/* Add New Card */}
               <button 
-                onClick={() => { setIsEditing(true); setCurrentTemplate({ type: EventType.CLOSING }); }}
+                onClick={() => { setIsEditing(true); setCurrentTemplate({ type: EventType.CLOSING, titleColor: getDefaultColorByType(EventType.CLOSING) }); }}
                 className="flex flex-col items-center justify-center p-8 border border-dashed border-gray-300 rounded-[2rem] hover:border-blue-400 hover:bg-blue-50/30 transition-all group min-h-[220px] bg-transparent"
               >
                 <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 border border-gray-100 group-hover:border-blue-200 group-hover:shadow-md">
@@ -273,10 +311,15 @@ export const TemplateManager: React.FC<Props> = ({ user, onClose }) => {
               >
                 
                 <div className="flex justify-between items-start mb-6">
-                    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider border ${EVENT_COLORS[template.type].lightBg} ${EVENT_COLORS[template.type].text} ${EVENT_COLORS[template.type].border} bg-opacity-60 border-opacity-30`}>
-                        {getIconForType(template.type, 16)}
-                        <span className="truncate max-w-[120px]">{EVENT_COLORS[template.type].label.split(' ')[0]}</span>
-                    </div>
+                    {(() => {
+                      const colorStyle = resolveEventColorStyle(template.type, template.titleColor);
+                      return (
+                        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider border ${colorStyle.lightBg} ${colorStyle.text} ${colorStyle.border} bg-opacity-60 border-opacity-30`}>
+                          {getIconForType(template.type, 16)}
+                          <span className="truncate max-w-[120px]">{EVENT_COLORS[template.type].label.split(' ')[0]}</span>
+                        </div>
+                      );
+                    })()}
                 </div>
                 
                 <h3 className="font-bold text-xl text-gray-900 mb-3 truncate pr-4">{template.title}</h3>

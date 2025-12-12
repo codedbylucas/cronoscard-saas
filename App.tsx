@@ -6,7 +6,7 @@ import { Calendar } from './components/Calendar';
 import { DayModal } from './components/DayModal';
 import { TemplateManager } from './components/TemplateManager';
 import { AuthPage } from './components/AuthPage';
-import { getEvents } from './services/storageService';
+import { getEvents, saveEvent } from './services/storageService';
 import { CalendarEvent } from './types';
 import { Calendar as CalendarIcon, Layers, Layout, LogOut, Loader2 } from 'lucide-react';
 
@@ -20,6 +20,56 @@ const App: React.FC = () => {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
+
+  const sortDayEvents = (list: CalendarEvent[]) =>
+    [...list].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title));
+
+  const normalizeEvents = (items: CalendarEvent[]) => {
+    const byDate: Record<string, CalendarEvent[]> = {};
+    items.forEach((event) => {
+      if (!byDate[event.date]) byDate[event.date] = [];
+      byDate[event.date].push(event);
+    });
+
+    return Object.values(byDate).flatMap(dayEvents =>
+      sortDayEvents(dayEvents).map((event, index) => ({
+        ...event,
+        order: event.order ?? index,
+      }))
+    );
+  };
+
+  const reorderEvents = (allEvents: CalendarEvent[], eventId: string, targetDate: string, targetIndex: number) => {
+    const moving = allEvents.find(e => e.id === eventId);
+    if (!moving) return { updated: allEvents, changed: [] as CalendarEvent[] };
+
+    const sourceDate = moving.date;
+    const clampedIndex = Math.max(0, Math.min(targetIndex, allEvents.filter(e => e.date === targetDate && e.id !== eventId).length));
+
+    // Mesma data: apenas reordenar
+    if (sourceDate === targetDate) {
+      const dayEvents = sortDayEvents(allEvents.filter(e => e.date === sourceDate && e.id !== eventId));
+      dayEvents.splice(clampedIndex, 0, { ...moving });
+      const reindexed = dayEvents.map((event, index) => ({ ...event, order: index, date: sourceDate }));
+      const others = allEvents.filter(e => e.date !== sourceDate);
+      return { updated: [...others, ...reindexed], changed: reindexed };
+    }
+
+    // Datas diferentes: remover da origem e inserir no destino
+    const sourceEvents = sortDayEvents(allEvents.filter(e => e.date === sourceDate && e.id !== eventId));
+    const targetEvents = sortDayEvents(allEvents.filter(e => e.date === targetDate && e.id !== eventId));
+    const updatedMoving = { ...moving, date: targetDate };
+    targetEvents.splice(clampedIndex, 0, updatedMoving);
+
+    const reindex = (list: CalendarEvent[], date: string) =>
+      list.map((event, index) => ({ ...event, order: index, date }));
+
+    const newSource = reindex(sourceEvents, sourceDate);
+    const newTarget = reindex(targetEvents, targetDate);
+    const others = allEvents.filter(e => e.date !== sourceDate && e.date !== targetDate);
+
+    return { updated: [...others, ...newSource, ...newTarget], changed: [...newSource, ...newTarget] };
+  };
 
   // Initialize Auth Session
   useEffect(() => {
@@ -51,13 +101,20 @@ const App: React.FC = () => {
     if (!session?.user?.id) return;
     setIsLoadingEvents(true);
     const data = await getEvents(session.user.id);
-    setEvents(data);
+    setEvents(normalizeEvents(data));
     setIsLoadingEvents(false);
   };
 
   const handleSignOut = async () => {
       await signOut();
       setSession(null);
+  };
+
+  const handleEventMove = async (eventId: string, targetDate: string, targetIndex: number) => {
+    if (!session?.user?.id) return;
+    const { updated, changed } = reorderEvents(events, eventId, targetDate, targetIndex);
+    setEvents(updated);
+    await Promise.all(changed.map(ev => saveEvent(session.user.id, ev)));
   };
 
   if (isAuthLoading) {
@@ -167,6 +224,7 @@ const App: React.FC = () => {
                     <Calendar 
                         events={events} 
                         onDayClick={(date) => setSelectedDate(date)} 
+                        onEventMove={handleEventMove}
                     />
                 </div>
             )}

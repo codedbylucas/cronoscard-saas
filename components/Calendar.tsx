@@ -1,17 +1,30 @@
 import React, { useState } from 'react';
-import { CalendarEvent, EventType, EVENT_COLORS } from '../types';
+import { CalendarEvent, EventType, EVENT_COLORS, resolveEventColorStyle } from '../types';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface Props {
   events: CalendarEvent[];
   onDayClick: (date: string) => void;
+  onEventMove: (eventId: string, targetDate: string, targetIndex: number) => void;
 }
 
-export const Calendar: React.FC<Props> = ({ events, onDayClick }) => {
+export const Calendar: React.FC<Props> = ({ events, onDayClick, onEventMove }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
+
+  const sortDayEvents = (list: CalendarEvent[]) =>
+    [...list].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title));
+
+  const setDragTarget = (date: string | null, index: number | null) => {
+    if (dragOverDate === date && dragOverIndex === index) return;
+    setDragOverDate(date);
+    setDragOverIndex(index);
+  };
 
   // Navigation
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
@@ -53,25 +66,16 @@ export const Calendar: React.FC<Props> = ({ events, onDayClick }) => {
 
   // Helper to get visual style for a specific day cell
   const getDayStyle = (dateStr: string, isCurrentMonth: boolean) => {
-    const dayEvents = events.filter(e => e.date === dateStr);
+    const dayEvents = sortDayEvents(events.filter(e => e.date === dateStr));
+    const activeEvents = dayEvents.filter(e => !e.isCompleted);
     
     // Default base style
     let styles = "border-r border-b border-gray-100/50 transition-all duration-300 relative group flex flex-col ";
     
     // Determine priority color if has events
-    const hasDue = dayEvents.some(e => e.type === EventType.DUE);
-    const hasClosing = dayEvents.some(e => e.type === EventType.CLOSING);
-    const hasPush = dayEvents.some(e => e.type === EventType.PUSH);
-
-    if (dayEvents.length > 0) {
-        // Apply color based on priority: Due > Closing > Push
-        if (hasDue) {
-            styles += "bg-red-50/20 ring-1 ring-inset ring-red-100/80 ";
-        } else if (hasClosing) {
-            styles += "bg-amber-50/20 ring-1 ring-inset ring-amber-100/80 ";
-        } else if (hasPush) {
-            styles += "bg-sky-50/20 ring-1 ring-inset ring-sky-100/80 ";
-        }
+    if (activeEvents.length > 0) {
+        const primaryColor = resolveEventColorStyle(activeEvents[0].type, activeEvents[0].titleColor);
+        styles += `${primaryColor.lightBg} bg-opacity-50 ring-1 ring-inset ${primaryColor.ring} ring-opacity-40 `;
     } else {
         // No events
         styles += "bg-transparent hover:bg-white hover:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] hover:z-10 ";
@@ -130,15 +134,39 @@ export const Calendar: React.FC<Props> = ({ events, onDayClick }) => {
       <div className="grid grid-cols-7 auto-rows-fr">
         {calendarDays.map((dayObj, index) => {
             const dateStr = dayObj.date.toISOString().slice(0, 10);
-            const dayEvents = events.filter(e => e.date === dateStr);
+            const dayEvents = sortDayEvents(events.filter(e => e.date === dateStr));
             const isToday = new Date().toISOString().slice(0, 10) === dateStr;
             const dayNumber = dayObj.date.getDate();
+
+            const insertPlaceholder = (position: number) =>
+              draggingId && dragOverDate === dateStr && dragOverIndex === position ? (
+                <div
+                  key={`ph-${dateStr}-${position}`}
+                  className="h-8 rounded-md border-2 border-dashed border-blue-300 bg-blue-50/60"
+                ></div>
+              ) : null;
 
             return (
                 <div 
                     key={dateStr}
                     onClick={() => onDayClick(dateStr)}
-                    className={`min-h-[160px] p-4 cursor-pointer flex flex-col ${getDayStyle(dateStr, dayObj.isCurrentMonth)}`}
+                    onDragOver={(e) => {
+                      if (!draggingId) return;
+                      e.preventDefault();
+                      // Só atualiza o alvo se ainda não está neste dia/índice (evita jitter ao alternar container/itens)
+                      if (dragOverDate !== dateStr || dragOverIndex === null) {
+                        setDragTarget(dateStr, dayEvents.length);
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (draggingId === null) return;
+                      const targetIndex = dragOverIndex ?? dayEvents.length;
+                      onEventMove(draggingId, dateStr, targetIndex);
+                      setDraggingId(null);
+                      setDragTarget(null, null);
+                    }}
+                    className={`min-h-[160px] p-4 cursor-pointer flex flex-col ${getDayStyle(dateStr, dayObj.isCurrentMonth)} ${dragOverDate === dateStr ? 'outline outline-2 outline-blue-200' : ''}`}
                 >
                     <div className="flex justify-between items-start mb-3">
                         <span className={`text-lg font-medium w-8 h-8 flex items-center justify-center rounded-full transition-colors ${
@@ -159,19 +187,37 @@ export const Calendar: React.FC<Props> = ({ events, onDayClick }) => {
                     </div>
                     
                     <div className="flex-1 overflow-hidden space-y-1.5 flex flex-col justify-start">
-                        {dayEvents.slice(0, 4).map(event => (
+                        {dayEvents.map((event, idx) => (
+                          <React.Fragment key={event.id}>
+                            {insertPlaceholder(idx)}
                             <div 
-                            key={event.id} 
-                            className={`px-2.5 py-1 rounded-md text-[10px] font-bold tracking-wide shadow-sm flex items-center gap-1.5 border border-black/5 ${EVENT_COLORS[event.type].bg} text-white hover:brightness-105 transition-all w-full`} 
-                            >
+                              draggable
+                              onDragStart={(e) => {
+                                setDraggingId(event.id);
+                                e.dataTransfer.effectAllowed = 'move';
+                                e.dataTransfer.setData('text/plain', event.id);
+                              }}
+                              onDragEnd={() => {
+                                setDraggingId(null);
+                                setDragTarget(null, null);
+                              }}
+                              onDragOver={(e) => {
+                                if (!draggingId) return;
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (dragOverDate !== dateStr || dragOverIndex !== idx) {
+                                  setDragTarget(dateStr, idx);
+                                }
+                              }}
+                              className={`px-2.5 py-1 rounded-md text-[10px] font-bold tracking-wide shadow-sm flex items-center gap-1.5 border border-black/5 ${
+                                event.isCompleted ? 'bg-gray-200 text-gray-600 border-gray-200' : resolveEventColorStyle(event.type, event.titleColor).bg + ' text-white'
+                              } ${draggingId === event.id ? 'opacity-60' : ''} hover:brightness-105 transition-all w-full`}
+                              >
                                 <span className="truncate leading-none pb-[1px]">{event.title}</span>
                             </div>
+                          </React.Fragment>
                         ))}
-                         {dayEvents.length > 4 && (
-                            <span className="text-[10px] text-gray-400 font-medium pl-1">
-                                +{dayEvents.length - 4} mais
-                            </span>
-                        )}
+                        {insertPlaceholder(dayEvents.length)}
                     </div>
                 </div>
             );

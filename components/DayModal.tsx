@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { CalendarEvent, EventType, Template, EVENT_COLORS } from '../types';
+import { CalendarEvent, EventType, Template, EVENT_COLORS, resolveEventColorStyle, getDefaultColorByType } from '../types';
 import { getTemplates, saveEvent, deleteEvent } from '../services/storageService';
-import { X, Copy, Trash2, Plus, Check, Calendar as CalendarIcon, ArrowRight, LayoutList, Loader2, AlertTriangle } from 'lucide-react';
+import { X, Copy, Trash2, Plus, Check, Calendar as CalendarIcon, ArrowRight, LayoutList, Loader2, AlertTriangle, CheckCircle2, RotateCcw } from 'lucide-react';
 
 interface Props {
   user: string;
@@ -33,6 +33,7 @@ export const DayModal: React.FC<Props> = ({ user, date, events, onClose, onUpdat
 
   const handleAddEvent = async (template: Template) => {
     setIsProcessing(true);
+    const dayEvents = events.filter(e => e.date === date);
     const newEvent: CalendarEvent = {
       // id será gerado pelo Supabase se omitido
       id: '', 
@@ -40,7 +41,10 @@ export const DayModal: React.FC<Props> = ({ user, date, events, onClose, onUpdat
       type: template.type,
       title: template.title,
       templateId: template.id,
-      customContent: template.content
+      customContent: template.content,
+      titleColor: template.titleColor || getDefaultColorByType(template.type),
+      order: dayEvents.length,
+      isCompleted: false,
     };
     await saveEvent(user, newEvent);
     onUpdate(); // Chama refresh no pai
@@ -66,8 +70,16 @@ export const DayModal: React.FC<Props> = ({ user, date, events, onClose, onUpdat
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const toggleComplete = async (event: CalendarEvent) => {
+    setIsProcessing(true);
+    await saveEvent(user, { ...event, isCompleted: !event.isCompleted });
+    onUpdate();
+    setIsProcessing(false);
+  };
+
   // Filter events for this day
   const dayEvents = events.filter(e => e.date === date);
+  const sortedDayEvents = [...dayEvents].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title));
 
   const getTypeLabelShort = (type: EventType) => {
       switch(type) {
@@ -75,7 +87,7 @@ export const DayModal: React.FC<Props> = ({ user, date, events, onClose, onUpdat
           case EventType.CLOSING: return 'Fechamento';
           case EventType.PUSH: return 'Push';
       }
-  }
+  };
 
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -151,25 +163,49 @@ export const DayModal: React.FC<Props> = ({ user, date, events, onClose, onUpdat
                     </div>
                 ) : (
                     <div className="space-y-6">
-                        {dayEvents.map(event => (
+                        {sortedDayEvents.map(event => {
+                        const colorStyle = resolveEventColorStyle(event.type, event.titleColor);
+                        const isDone = !!event.isCompleted;
+                        return (
                         <div key={event.id} className="relative pl-6 group">
                             {/* Vertical Line */}
-                            <div className={`absolute left-0 top-0 bottom-0 w-[2px] rounded-full ${EVENT_COLORS[event.type].bg} opacity-30 group-hover:opacity-100 transition-opacity`}></div>
+                            <div className={`absolute left-0 top-0 bottom-0 w-[2px] rounded-full ${isDone ? 'bg-gray-300' : colorStyle.bg} opacity-30 group-hover:opacity-100 transition-opacity`}></div>
                             
                             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300">
                                 <div className="flex justify-between items-start mb-3">
                                     <div>
-                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide mb-2 ${EVENT_COLORS[event.type].lightBg} ${EVENT_COLORS[event.type].text}`}>
-                                            {EVENT_COLORS[event.type].label}
-                                        </span>
-                                        <h4 className="font-bold text-gray-900 text-lg leading-tight">{event.title}</h4>
+                                        <div className="flex items-center gap-2 mb-2">
+                                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${isDone ? 'bg-gray-100 text-gray-500 border border-gray-200' : `${colorStyle.lightBg} ${colorStyle.text}`} `}>
+                                              {EVENT_COLORS[event.type].label}
+                                          </span>
+                                          {isDone && (
+                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-gray-100 text-gray-500 border border-gray-200">
+                                              <CheckCircle2 size={12} />
+                                              Concluído
+                                            </span>
+                                          )}
+                                        </div>
+                                        <h4 className={`font-bold text-lg leading-tight ${isDone ? 'text-gray-500' : 'text-gray-900'}`}>{event.title}</h4>
                                     </div>
-                                    <button onClick={() => confirmDelete(event.id)} className="text-gray-300 hover:text-red-500 transition p-2 hover:bg-red-50 rounded-lg -mr-2 -mt-2">
-                                        <Trash2 size={18} />
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                      <button 
+                                        onClick={() => toggleComplete(event)}
+                                        className={`p-2 rounded-lg border text-xs font-bold uppercase tracking-wide ${
+                                          isDone 
+                                            ? 'border-gray-200 text-gray-500 hover:bg-gray-50' 
+                                            : 'border-green-200 text-green-600 hover:bg-green-50'
+                                        }`}
+                                        title={isDone ? 'Marcar como ativo' : 'Marcar como concluído'}
+                                      >
+                                        {isDone ? <RotateCcw size={16} /> : <CheckCircle2 size={16} />}
+                                      </button>
+                                      <button onClick={() => confirmDelete(event.id)} className="text-gray-300 hover:text-red-500 transition p-2 hover:bg-red-50 rounded-lg -mr-2 -mt-2">
+                                          <Trash2 size={18} />
+                                      </button>
+                                    </div>
                                 </div>
                                 
-                                <div className="bg-gray-50/80 p-4 rounded-xl text-sm text-gray-600 leading-relaxed border border-gray-100 mb-4">
+                                <div className={`bg-gray-50/80 p-4 rounded-xl text-sm leading-relaxed border border-gray-100 mb-4 ${isDone ? 'text-gray-500' : 'text-gray-600'}`}>
                                     "{event.customContent}"
                                 </div>
                                 
@@ -186,7 +222,8 @@ export const DayModal: React.FC<Props> = ({ user, date, events, onClose, onUpdat
                                 </button>
                             </div>
                         </div>
-                        ))}
+                        );
+                        })}
                     </div>
                 )}
             </div>

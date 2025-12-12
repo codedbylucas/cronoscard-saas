@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { CalendarEvent, Template, EventType } from '../types';
+import { CalendarEvent, Template, EventType, TitleColor, getDefaultColorByType } from '../types';
 
 // --- Helper para identificar o "usuário" (sessão do navegador) ---
 export const getUserId = (): string => {
@@ -12,6 +12,14 @@ export const getUserId = (): string => {
 };
 
 // --- Templates ---
+
+const mapTemplate = (item: any): Template => ({
+  id: item.id,
+  type: item.type,
+  title: item.title,
+  content: item.content,
+  titleColor: (item.title_color as TitleColor | undefined) || getDefaultColorByType(item.type as EventType),
+});
 
 export const getTemplates = async (user: string): Promise<Template[]> => {
   const { data, error } = await supabase
@@ -27,9 +35,9 @@ export const getTemplates = async (user: string): Promise<Template[]> => {
   // Se não tiver templates, cria os padrões no banco para este usuário
   if (!data || data.length === 0) {
     const seeds = [
-      { user_id: user, type: EventType.CLOSING, title: 'Fechamento Padrão', content: 'Sua fatura fecha hoje, organize seu limite.' },
-      { user_id: user, type: EventType.DUE, title: 'Vencimento Urgente', content: 'Sua fatura vence hoje! Evite juros.' },
-      { user_id: user, type: EventType.PUSH, title: 'Novidade', content: 'Prepare-se! Temos uma novidade chegando em breve.' },
+      { user_id: user, type: EventType.CLOSING, title: 'Fechamento Padrão', content: 'Sua fatura fecha hoje, organize seu limite.', title_color: getDefaultColorByType(EventType.CLOSING) },
+      { user_id: user, type: EventType.DUE, title: 'Vencimento Urgente', content: 'Sua fatura vence hoje! Evite juros.', title_color: getDefaultColorByType(EventType.DUE) },
+      { user_id: user, type: EventType.PUSH, title: 'Novidade', content: 'Prepare-se! Temos uma novidade chegando em breve.', title_color: getDefaultColorByType(EventType.PUSH) },
     ];
     
     const { data: insertedData, error: insertError } = await supabase
@@ -38,10 +46,10 @@ export const getTemplates = async (user: string): Promise<Template[]> => {
       .select();
       
     if (insertError) console.error('Erro ao criar seeds:', insertError);
-    return insertedData as Template[] || [];
+    return (insertedData || []).map(mapTemplate);
   }
 
-  return data as Template[];
+  return data.map(mapTemplate);
 };
 
 export const saveTemplate = async (user: string, template: Partial<Template>) => {
@@ -49,7 +57,8 @@ export const saveTemplate = async (user: string, template: Partial<Template>) =>
     user_id: user,
     type: template.type,
     title: template.title,
-    content: template.content
+    content: template.content,
+    title_color: template.titleColor || (template.type ? getDefaultColorByType(template.type) : null),
   };
 
   // Se tem ID longo (UUID), tenta atualizar
@@ -82,24 +91,50 @@ export const deleteTemplate = async (user: string, id: string) => {
 // --- Events ---
 
 export const getEvents = async (user: string): Promise<CalendarEvent[]> => {
-  const { data, error } = await supabase
-    .from('events')
-    .select('*')
-    .eq('user_id', user);
+  const [{ data, error }, { data: templatesData }] = await Promise.all([
+    supabase
+      .from('events')
+      .select('*')
+      .eq('user_id', user),
+    supabase
+      .from('templates')
+      .select('id, title_color, type')
+      .eq('user_id', user),
+  ]);
 
   if (error) {
     console.error('Erro ao buscar eventos:', error);
     return [];
   }
+
+  const templateColors = new Map<string, { titleColor?: TitleColor; type: EventType }>();
+  (templatesData || []).forEach((template: any) => {
+    templateColors.set(
+      template.id,
+      {
+        titleColor: template.title_color as TitleColor | undefined,
+        type: template.type as EventType,
+      }
+    );
+  });
   
-  return data.map((item: any) => ({
-    id: item.id,
-    date: item.date,
-    type: item.type,
-    title: item.title,
-    templateId: item.template_id,
-    customContent: item.custom_content
-  }));
+  return (data || []).map((item: any) => {
+    const template = item.template_id ? templateColors.get(item.template_id) : undefined;
+    const resolvedType = item.type as EventType;
+    const resolvedColor = (template?.titleColor as TitleColor | undefined) || getDefaultColorByType(resolvedType);
+
+    return {
+      id: item.id,
+      date: item.date,
+      type: resolvedType,
+      title: item.title,
+      templateId: item.template_id,
+      customContent: item.custom_content,
+      order: item.order_index ?? item.order ?? undefined,
+      isCompleted: item.is_completed ?? false,
+      titleColor: resolvedColor,
+    };
+  });
 };
 
 export const saveEvent = async (user: string, event: CalendarEvent) => {
@@ -109,7 +144,9 @@ export const saveEvent = async (user: string, event: CalendarEvent) => {
     type: event.type,
     title: event.title,
     template_id: event.templateId,
-    custom_content: event.customContent
+    custom_content: event.customContent,
+    order_index: event.order ?? null,
+    is_completed: event.isCompleted ?? false,
   };
 
   if (event.id && event.id.length > 10) {
