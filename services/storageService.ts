@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { CalendarEvent, Template, EventType, TitleColor, getDefaultColorByType } from '../types';
+import { CalendarEvent, Template, EventType, TitleColor, getDefaultColorByType, ManualReportEntry } from '../types';
 
 // --- Helper para identificar o "usuário" (sessão do navegador) ---
 export const getUserId = (): string => {
@@ -170,4 +170,52 @@ export const deleteEvent = async (user: string, id: string) => {
     .eq('id', id);
 
   if (error) console.error('Erro ao deletar evento:', error);
+};
+
+// --- Manual Reports (Supabase persistence) ---
+
+export const getManualReports = async (user: string): Promise<ManualReportEntry[]> => {
+  const { data, error } = await supabase
+    .from('manual_reports')
+    .select('*')
+    .eq('user_id', user)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Erro ao buscar lançamentos manuais:', error);
+    return [];
+  }
+
+  return (data || []).map((item: any) => ({
+    id: item.id,
+    title: item.title,
+    count: Number(item.count) || 0,
+    createdAt: item.created_at,
+  }));
+};
+
+export const saveManualReport = async (user: string, entry: ManualReportEntry) => {
+  const payload = {
+    id: entry.id,
+    user_id: user,
+    title: entry.title,
+    count: entry.count,
+    created_at: entry.createdAt || new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from('manual_reports')
+    .upsert(payload);
+
+  if (error) console.error('Erro ao salvar lançamento manual:', error);
+};
+
+export const deleteManualReport = async (user: string, id: string) => {
+  const { error } = await supabase
+    .from('manual_reports')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', user);
+
+  if (error) console.error('Erro ao deletar lançamento manual:', error);
 };

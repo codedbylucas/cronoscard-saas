@@ -1,14 +1,14 @@
-
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { supabase } from './services/supabaseClient';
 import { signOut } from './services/authService';
 import { Calendar } from './components/Calendar';
 import { DayModal } from './components/DayModal';
 import { TemplateManager } from './components/TemplateManager';
 import { AuthPage } from './components/AuthPage';
+import { HistoryDashboard } from './components/HistoryDashboard';
 import { getEvents, saveEvent } from './services/storageService';
 import { CalendarEvent } from './types';
-import { Calendar as CalendarIcon, Layers, Layout, LogOut, Loader2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Layers, Layout, LogOut, Loader2, Clock3 } from 'lucide-react';
 
 const App: React.FC = () => {
   // Session State
@@ -16,7 +16,7 @@ const App: React.FC = () => {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
   // App Navigation & Data State
-  const [currentSection, setCurrentSection] = useState<'calendar' | 'templates'>('calendar');
+  const [currentSection, setCurrentSection] = useState<'calendar' | 'templates' | 'history'>('calendar');
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
@@ -159,6 +159,14 @@ const App: React.FC = () => {
                 <Layers size={22} className={`group-hover:scale-110 transition-transform ${currentSection === 'templates' ? 'text-white' : 'text-slate-500 group-hover:text-white'}`} />
                 <span className="font-medium hidden md:block text-sm">Mensagens</span>
             </button>
+
+            <button 
+                onClick={() => setCurrentSection('history')}
+                className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-200 group ${currentSection === 'history' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+            >
+                <Clock3 size={22} className={`group-hover:scale-110 transition-transform ${currentSection === 'history' ? 'text-white' : 'text-slate-500 group-hover:text-white'}`} />
+                <span className="font-medium hidden md:block text-sm">Histórico</span>
+            </button>
         </nav>
 
         <div className="p-6 border-t border-slate-800">
@@ -187,9 +195,15 @@ const App: React.FC = () => {
         <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 h-24 flex items-center justify-between px-10 flex-shrink-0 sticky top-0 z-40">
             <div>
                 <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
-                    {currentSection === 'calendar' ? 'Visão Geral' : 'Modelos de Mensagem'}
+                    {currentSection === 'calendar' && 'Visão Geral'}
+                    {currentSection === 'templates' && 'Modelos de Mensagem'}
+                    {currentSection === 'history' && 'Histórico e Dashboard'}
                 </h1>
-                <p className="text-sm text-gray-500 mt-1">Gerencie suas datas e notificações</p>
+                <p className="text-sm text-gray-500 mt-1">
+                    {currentSection === 'history'
+                      ? 'Veja o histórico de push, atividades do calendário e lance contagens manuais.'
+                      : 'Gerencie suas datas e notificações'}
+                </p>
             </div>
         </header>
 
@@ -234,6 +248,16 @@ const App: React.FC = () => {
                      <TemplateManager 
                         user={session.user.id} 
                         onClose={() => setCurrentSection('calendar')} 
+                    />
+                </div>
+            )}
+
+            {currentSection === 'history' && (
+                <div className="h-full max-w-[1600px] mx-auto">
+                    <HistoryDashboard 
+                        userId={session.user.id} 
+                        events={events} 
+                        onReload={loadEvents}
                     />
                 </div>
             )}

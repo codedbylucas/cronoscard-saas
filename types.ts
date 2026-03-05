@@ -32,6 +32,13 @@ export interface User {
   companyName: string;
 }
 
+export interface ManualReportEntry {
+  id: string;
+  title: string;
+  count: number;
+  createdAt: string; // ISO date-time
+}
+
 // Paleta de cores escolhidas manualmente pelo usuГЎrio
 const COLOR_STYLES: Record<TitleColor, { bg: string; text: string; border: string; ring: string; lightBg: string; label: string; shadow: string }> = {
   yellow: {
