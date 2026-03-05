@@ -9,6 +9,7 @@ import { HistoryDashboard } from './components/HistoryDashboard';
 import { getEvents, saveEvent } from './services/storageService';
 import { CalendarEvent } from './types';
 import { Calendar as CalendarIcon, Layers, Layout, LogOut, Loader2, Clock3 } from 'lucide-react';
+import { useDailyPushReminder } from './hooks/useDailyPushReminder';
 
 const App: React.FC = () => {
   // Session State
@@ -117,6 +118,12 @@ const App: React.FC = () => {
     await Promise.all(changed.map(ev => saveEvent(session.user.id, ev)));
   };
 
+  // Notificação diária de pushes às 08h
+  const { banner, permission, hasNotificationApi, requestPermission, today, clearBanner } = useDailyPushReminder({
+    events,
+    currentSection,
+  });
+
   if (isAuthLoading) {
       return (
           <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -205,6 +212,26 @@ const App: React.FC = () => {
                       : 'Gerencie suas datas e notificações'}
                 </p>
             </div>
+            {currentSection === 'calendar' && (
+              <div className="flex items-center gap-3">
+                {permission !== 'granted' && (
+                  <button
+                    onClick={requestPermission}
+                    className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold shadow-md shadow-blue-200 hover:bg-blue-700"
+                  >
+                    Ativar notificações
+                  </button>
+                )}
+                {permission === 'denied' && (
+                  <span className="text-xs text-red-500 max-w-xs text-right">
+                    Notificações bloqueadas no navegador. Ative manualmente nas permissões do site para receber alertas.
+                  </span>
+                )}
+                {!hasNotificationApi && (
+                  <span className="text-xs text-slate-500">Seu navegador não suporta Web Notifications.</span>
+                )}
+              </div>
+            )}
         </header>
 
         {/* Content Body */}
@@ -219,6 +246,33 @@ const App: React.FC = () => {
 
             {currentSection === 'calendar' && (
                 <div className="max-w-[1600px] mx-auto">
+                    {/* Reminder banner */}
+                    {banner && (
+                      <div className="mb-6 rounded-2xl border border-blue-100 bg-blue-50 text-blue-900 shadow-sm px-5 py-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold">{banner.title}</p>
+                          <p className="text-sm">{banner.description}</p>
+                          {banner.list && banner.list.length > 0 && (
+                            <p className="text-xs text-blue-800 mt-1">Principais: {banner.list.join(' • ')}</p>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setSelectedDate(today)}
+                            className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold shadow-sm hover:bg-blue-700"
+                          >
+                            Ver agendadas
+                          </button>
+                          <button
+                            onClick={clearBanner}
+                            className="px-3 py-2 rounded-lg bg-white text-blue-700 border border-blue-200 text-sm hover:bg-blue-100"
+                          >
+                            Fechar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Legend */}
                     <div className="flex flex-wrap gap-4 mb-8">
                         <div className="flex items-center gap-2.5 bg-white px-4 py-2 rounded-xl border border-gray-100 shadow-sm ring-1 ring-gray-50">
