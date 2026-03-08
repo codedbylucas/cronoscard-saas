@@ -118,7 +118,7 @@ const App: React.FC = () => {
     await Promise.all(changed.map(ev => saveEvent(session.user.id, ev)));
   };
 
-  // Notificação diária de pushes às 08h
+  // Notificações de pushes às 09h, 12h e 15h
   const { banner, permission, hasNotificationApi, requestPermission, today, clearBanner } = useDailyPushReminder({
     events,
     currentSection,
