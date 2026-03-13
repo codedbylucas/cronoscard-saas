@@ -4,7 +4,12 @@ import { CalendarEvent, EventType } from '../types';
 type PermissionState = NotificationPermission | 'unsupported';
 
 const LAST_REMINDER_KEY = 'dailyReminderSlots';
-const REMINDER_HOURS = [9, 15, 18] as const;
+const REMINDER_SLOTS = [
+  { hour: 9, min: 0 },
+  { hour: 15, min: 0 },
+  { hour: 16, min: 30 },
+  { hour: 18, min: 0 },
+] as const;
 const NOTIFICATION_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(
   `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>
       <rect rx='14' ry='14' width='64' height='64' fill='#2563eb'/>
@@ -19,9 +24,10 @@ const formatLocalDate = (date: Date) => {
   return `${y}-${m}-${d}`;
 };
 
-type FiredState = { date: string; firedHours: number[] };
+type FiredState = { date: string; firedSlots: string[] };
 
-const formatSlotLabel = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
+const formatSlotLabel = (hour: number, min: number) => 
+  `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
 
 interface ReminderBanner {
   title: string;
@@ -73,23 +79,23 @@ export const useDailyPushReminder = ({ events, currentSection }: UseDailyPushRem
   };
 
   const getFiredState = (): FiredState => {
-    if (typeof localStorage === 'undefined') return { date: today, firedHours: [] };
+    if (typeof localStorage === 'undefined') return { date: today, firedSlots: [] };
     try {
       const raw = localStorage.getItem(LAST_REMINDER_KEY);
-      if (!raw) return { date: today, firedHours: [] };
+      if (!raw) return { date: today, firedSlots: [] };
       const parsed = JSON.parse(raw) as FiredState;
-      if (parsed.date !== today) return { date: today, firedHours: [] };
-      return { date: today, firedHours: Array.isArray(parsed.firedHours) ? parsed.firedHours : [] };
+      if (parsed.date !== today) return { date: today, firedSlots: [] };
+      return { date: today, firedSlots: Array.isArray(parsed.firedSlots) ? parsed.firedSlots : [] };
     } catch {
-      return { date: today, firedHours: [] };
+      return { date: today, firedSlots: [] };
     }
   };
 
-  const markSlotFired = (hour: number) => {
+  const markSlotFired = (slotKey: string) => {
     if (typeof localStorage === 'undefined') return;
     const state = getFiredState();
-    const firedHours = Array.from(new Set([...(state.firedHours || []), hour]));
-    localStorage.setItem(LAST_REMINDER_KEY, JSON.stringify({ date: today, firedHours }));
+    const firedSlots = Array.from(new Set([...(state.firedSlots || []), slotKey]));
+    localStorage.setItem(LAST_REMINDER_KEY, JSON.stringify({ date: today, firedSlots }));
   };
 
   const buildNotificationBody = () => {
@@ -98,22 +104,22 @@ export const useDailyPushReminder = ({ events, currentSection }: UseDailyPushRem
     return titles.join(' • ');
   };
 
-  const dispatchReminder = (hour: number) => {
-    markSlotFired(hour);
+  const dispatchReminder = (hour: number, min: number) => {
+    const slotKey = formatSlotLabel(hour, min);
+    markSlotFired(slotKey);
     const body = buildNotificationBody();
     const list = pendingPushes.slice(0, 3).map((ev) => ev.title);
-    const slotLabel = formatSlotLabel(hour);
 
     // In-app banner (sempre mostra, mesmo sem Notification API)
     setBanner(
       pendingPushes.length > 0
         ? {
-            title: `Pushs pendentes (${slotLabel})`,
+            title: `Pushs pendentes (${slotKey})`,
             description: `Você tem ${pendingPushes.length} push(s) agendadas para hoje.`,
             list,
           }
         : {
-            title: `Sem push pendente (${slotLabel})`,
+            title: `Sem push pendente (${slotKey})`,
             description: 'Nenhuma push agendada para hoje ou todas já foram concluídas.',
           }
     );
@@ -123,7 +129,7 @@ export const useDailyPushReminder = ({ events, currentSection }: UseDailyPushRem
         body,
         icon: NOTIFICATION_ICON,
         badge: NOTIFICATION_ICON,
-        tag: `daily-push-reminder-${today}-${hour}`,
+        tag: `daily-push-reminder-${today}-${slotKey}`,
       });
     }
 
@@ -131,7 +137,7 @@ export const useDailyPushReminder = ({ events, currentSection }: UseDailyPushRem
     scheduleNext();
   };
 
-  // agenda timeouts diários para 09:00, 15:00 e 18:00 locais; re-agenda sempre que disparar
+  // agenda timeouts diários para os slots definidos; re-agenda sempre que disparar
   const scheduleNext = () => {
     clearTimer();
     if (currentSection !== 'calendar') return;
@@ -141,34 +147,38 @@ export const useDailyPushReminder = ({ events, currentSection }: UseDailyPushRem
     const paramDebug = params?.get('debugReminder') === '1';
     if ((debugSeconds && debugSeconds > 0) || paramDebug) {
       const delay = debugSeconds && debugSeconds > 0 ? debugSeconds * 1000 : 5000; // default 5s
-      timeoutRef.current = setTimeout(() => dispatchReminder(REMINDER_HOURS[0]), delay);
+      timeoutRef.current = setTimeout(() => dispatchReminder(REMINDER_SLOTS[0].hour, REMINDER_SLOTS[0].min), delay);
       return;
     }
 
     const now = new Date();
     const state = getFiredState();
 
-    const todaySlots = REMINDER_HOURS.map((hour) => ({
-      hour,
-      target: new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0, 0, 0),
+    const todaySlots = REMINDER_SLOTS.map((slot) => ({
+      ...slot,
+      target: new Date(now.getFullYear(), now.getMonth(), now.getDate(), slot.hour, slot.min, 0, 0),
     }));
 
     const nextTodaySlot = todaySlots.find(
-      ({ hour, target }) => target > now && !state.firedHours.includes(hour)
+      ({ hour, min, target }) => {
+        const slotKey = formatSlotLabel(hour, min);
+        return target > now && !state.firedSlots.includes(slotKey);
+      }
     );
 
     if (nextTodaySlot) {
       timeoutRef.current = setTimeout(
-        () => dispatchReminder(nextTodaySlot.hour),
+        () => dispatchReminder(nextTodaySlot.hour, nextTodaySlot.min),
         nextTodaySlot.target.getTime() - now.getTime()
       );
       return;
     }
 
     // Nenhum horário pendente hoje -> agenda o primeiro slot de amanhã
-    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, REMINDER_HOURS[0], 0, 0, 0);
+    const nextSlot = REMINDER_SLOTS[0];
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, nextSlot.hour, nextSlot.min, 0, 0);
     timeoutRef.current = setTimeout(
-      () => dispatchReminder(REMINDER_HOURS[0]),
+      () => dispatchReminder(nextSlot.hour, nextSlot.min),
       tomorrow.getTime() - now.getTime()
     );
   };
