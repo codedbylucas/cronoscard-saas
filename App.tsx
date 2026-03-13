@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from './services/supabaseClient';
 import { signOut } from './services/authService';
 import { Calendar } from './components/Calendar';
@@ -118,7 +118,7 @@ const App: React.FC = () => {
     await Promise.all(changed.map(ev => saveEvent(session.user.id, ev)));
   };
 
-  // Notificações de pushes às 09h, 12h e 15h
+  // Notificações de pushes às 09h, 15h e 18h
   const { banner, permission, hasNotificationApi, requestPermission, today, clearBanner } = useDailyPushReminder({
     events,
     currentSection,

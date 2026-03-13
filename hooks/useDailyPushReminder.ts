@@ -4,7 +4,7 @@ import { CalendarEvent, EventType } from '../types';
 type PermissionState = NotificationPermission | 'unsupported';
 
 const LAST_REMINDER_KEY = 'dailyReminderSlots';
-const REMINDER_HOURS = [9, 12, 15] as const;
+const REMINDER_HOURS = [9, 15, 18] as const;
 const NOTIFICATION_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(
   `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>
       <rect rx='14' ry='14' width='64' height='64' fill='#2563eb'/>
@@ -118,7 +118,7 @@ export const useDailyPushReminder = ({ events, currentSection }: UseDailyPushRem
           }
     );
 
-    if (pendingPushes.length > 0 && hasNotificationApi && permission === 'granted') {
+    if (hasNotificationApi && permission === 'granted') {
       new Notification('Pushs pendentes de hoje', {
         body,
         icon: NOTIFICATION_ICON,
@@ -131,7 +131,7 @@ export const useDailyPushReminder = ({ events, currentSection }: UseDailyPushRem
     scheduleNext();
   };
 
-  // agenda timeouts diários para 09:00, 12:00 e 15:00 locais; re-agenda sempre que disparar
+  // agenda timeouts diários para 09:00, 15:00 e 18:00 locais; re-agenda sempre que disparar
   const scheduleNext = () => {
     clearTimer();
     if (currentSection !== 'calendar') return;
